@@ -3,17 +3,17 @@
 
 inline static uint32_t S(uint32_t a)
 {
-    return ((int32_t)a >> 31) & 1;
+    return ((uint32_t)a >> 31) & 1;
 }
 
 inline static uint32_t E(uint32_t a)
 {
-    return ((int32_t)a >> 23) & ((1 << 8) - 1);
+    return ((uint32_t)a >> 23) & ((1 << 8) - 1);
 }
 
 inline static uint32_t M(uint32_t a)
 {
-    return (int32_t)a & ((1 << 23) - 1);
+    return (uint32_t)a & ((1 << 23) - 1);
 }
 
 static uint32_t f32mul(uint32_t a, uint32_t b)
