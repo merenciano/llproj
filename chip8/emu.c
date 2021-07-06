@@ -390,6 +390,12 @@ void Update(Memory *mem)
 
 int main(int argc, char **argv)
 {
+    Memory mem;
+    Init(&mem);
+    LoadFile(&mem, argv[1]);
+    // Set PC to first instruction
+    mem.pc = 512;
+
     SDL_Window *window = SDL_CreateWindow(
             argv[1], 
             SDL_WINDOWPOS_UNDEFINED,
@@ -404,16 +410,18 @@ int main(int argc, char **argv)
             SDL_TEXTUREACCESS_STREAMING,
             64, 32);
 
-    Memory mem;
-    Init(&mem);
-    LoadFile(&mem, argv[1]);
-
-    // Set PC to first instruction
-    mem.pc = 512;
-
-
-    while (1)
+    SDL_Event e;
+    int exit = 0;
+    while (!exit)
     {
+        while (SDL_PollEvent(&e) > 0)
+        {
+            if (e.type == SDL_QUIT)
+            {
+                exit = 1;
+            }
+        }
+
         ExecuteInstruction(&mem);
         // Render
         uint8_t pix[64*32];
