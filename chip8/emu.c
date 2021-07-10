@@ -1,4 +1,6 @@
 #include <stdio.h> // Remove this at the end
+#include <stdlib.h> // rand
+#include <time.h> // rand seed
 #include <stdint.h>
 #include <string.h> // memset
 #include <SDL2/SDL.h>
@@ -15,7 +17,7 @@ typedef union TMemory
         uint16_t i; // I Register
         uint8_t display[64*33/8]; // Bitmap in order to fit the struct in 512 B
         uint8_t fonts[16*5];
-        int8_t v[16]; // Registers
+        uint8_t v[16]; // Registers
         uint8_t keys[16];
         uint8_t sp; // Stack pointer
         uint8_t delay;
@@ -24,6 +26,8 @@ typedef union TMemory
 } Memory;
 
 int loop_count = 0;
+uint8_t keys_pressed[16];
+uint8_t quit = 0;
 
 void LoadFonts(Memory *mem)
 {
@@ -54,7 +58,160 @@ void LoadFonts(Memory *mem)
 
 void Init(Memory *mem)
 {
+    memset(mem->raw, 0, 4096);
     LoadFonts(mem);
+    srand(time(NULL));
+}
+
+void GetInput(SDL_Event *e)
+{
+    while (SDL_PollEvent(e) > 0)
+    {
+        if (e->type == SDL_QUIT)
+        {
+            quit = 1;
+        }
+
+        if (e->type == SDL_KEYDOWN)
+        {
+            switch(e->key.keysym.sym)
+            {
+                case SDLK_x:
+                    keys_pressed[0] = 1;
+                    break;
+
+                case SDLK_1:
+                    keys_pressed[1] = 1;
+                    break;
+
+                case SDLK_2:
+                    keys_pressed[2] = 1;
+                    break;
+
+                case SDLK_3:
+                    keys_pressed[3] = 1;
+                    break;
+
+                case SDLK_q:
+                    keys_pressed[4] = 1;
+                    break;
+
+                case SDLK_w:
+                    keys_pressed[5] = 1;
+                    break;
+
+                case SDLK_e:
+                    keys_pressed[6] = 1;
+                    break;
+
+                case SDLK_a:
+                    keys_pressed[7] = 1;
+                    break;
+
+                case SDLK_s:
+                    keys_pressed[8] = 1;
+                    break;
+
+                case SDLK_d:
+                    keys_pressed[9] = 1;
+                    break;
+
+                case SDLK_z:
+                    keys_pressed[10] = 1;
+                    break;
+
+                case SDLK_c:
+                    keys_pressed[11] = 1;
+                    break;
+
+                case SDLK_4:
+                    keys_pressed[12] = 1;
+                    break;
+
+                case SDLK_r:
+                    keys_pressed[13] = 1;
+                    break;
+
+                case SDLK_f:
+                    keys_pressed[14] = 1;
+                    break;
+
+                case SDLK_v:
+                    keys_pressed[15] = 1;
+                    break;
+            }
+        }
+
+        if (e->type == SDL_KEYUP)
+        {
+            switch(e->key.keysym.sym)
+            {
+                case SDLK_x:
+                    keys_pressed[0] = 0;
+                    break;
+
+                case SDLK_1:
+                    keys_pressed[1] = 0;
+                    break;
+
+                case SDLK_2:
+                    keys_pressed[2] = 0;
+                    break;
+
+                case SDLK_3:
+                    keys_pressed[3] = 0;
+                    break;
+
+                case SDLK_q:
+                    keys_pressed[4] = 0;
+                    break;
+
+                case SDLK_w:
+                    keys_pressed[5] = 0;
+                    break;
+
+                case SDLK_e:
+                    keys_pressed[6] = 0;
+                    break;
+
+                case SDLK_a:
+                    keys_pressed[7] = 0;
+                    break;
+
+                case SDLK_s:
+                    keys_pressed[8] = 0;
+                    break;
+
+                case SDLK_d:
+                    keys_pressed[9] = 0;
+                    break;
+
+                case SDLK_z:
+                    keys_pressed[10] = 0;
+                    break;
+
+                case SDLK_c:
+                    keys_pressed[11] = 0;
+                    break;
+
+                case SDLK_4:
+                    keys_pressed[12] = 0;
+                    break;
+
+                case SDLK_r:
+                    keys_pressed[13] = 0;
+                    break;
+
+                case SDLK_f:
+                    keys_pressed[14] = 0;
+                    break;
+
+                case SDLK_v:
+                    keys_pressed[15] = 0;
+                    break;
+            }
+        }
+    }
 }
 
 void LoadFile(Memory *mem, const char *filename)
@@ -83,7 +240,6 @@ void ExecuteInstruction(Memory *mem)
     mem->pc += 2;
     //printf("%05d: 0x%04X\n", loop_count, op);
     //getchar();
-
 
     switch ((op >> 12) & 0xF)
     {
@@ -121,7 +277,7 @@ void ExecuteInstruction(Memory *mem)
         {
             // Skip if eq
             uint8_t x = (op >> 8) & 0xF;
-            if (mem->v[x] == op & 0xFF)
+            if (mem->v[x] == (op & 0xFF))
             {
                 mem->pc += 2;
             }
@@ -298,8 +454,7 @@ void ExecuteInstruction(Memory *mem)
         case 0xC:
         {
             // Random
-            // TODO: Random
-            uint8_t rnd = 134;
+            uint8_t rnd = (uint8_t)rand();
             uint8_t x = (op >> 8) & 0xF;
             mem->v[x] = rnd & (op & 0xFF);
             break;
@@ -348,6 +503,101 @@ void ExecuteInstruction(Memory *mem)
             break;
         }
 
+        case 0xE:
+        {
+            if ((op & 0xFF) == 0x9E)
+            {
+                // Skip if key pressed
+                uint8_t key = (op >> 8) & 0xF;
+                key = mem->v[key];
+
+                if (keys_pressed[key])
+                {
+                    mem->pc += 2;
+                }
+            }
+            else if ((op & 0xFF) == 0xA1)
+            {
+                // Skip if not pressed
+                uint8_t key = (op >> 8) & 0xF;
+                key = mem->v[key];
+                if (!keys_pressed[key])
+                {
+                    mem->pc += 2;
+                }
+            }
+            break;
+        }
+
+        case 0xF:
+        {
+            uint8_t x = (op >> 8) & 0xF;
+            switch (op & 0xFF)
+            {
+                case 0x07:
+                    mem->v[x] = mem->delay;
+                    break;
+
+                case 0x0A:
+                {
+                    // Wait until a key is pressed and store it in Vx
+                    uint8_t pressed = 0;
+                    for (int i = 0; i < 16; ++i)
+                    {
+                        if (keys_pressed[i])
+                        {
+                            mem->v[x] = i;
+                            pressed = 1;
+                            break;
+                        }
+                    }
+
+                    if (!pressed)
+                    {
+                        mem->pc -= 2;
+                    }
+                    break;
+                }
+
+                case 0x15:
+                    mem->delay = mem->v[x];
+                    break;
+
+                case 0x18:
+                    mem->sound = mem->v[x];
+                    break;
+
+                case 0x1E:
+                    mem->i += mem->v[x];
+                    break;
+
+                case 0x29:
+                    mem->i = &(mem->fonts[x*5]) - mem->raw;
+                    break;
+
+                case 0x33:
+                    mem->raw[mem->i] = mem->v[x] / 100;
+                    mem->raw[mem->i + 1] = (mem->v[x] % 100) / 10;
+                    mem->raw[mem->i + 2] = mem->v[x] % 10;
+                    break;
+             
+                case 0x55:
+                    for (int i = 0; i <= x; ++i)
+                    {
+                        mem->raw[mem->i++] = mem->v[i];
+                    }
+                    break;
+
+                case 0x65:
+                    for (int i = 0; i <= x; ++i)
+                    {
+                        mem->v[i] = mem->raw[mem->i++];
+                    }
+                    break;
+            }
+            break;
+        }
+
         default:
             printf("Default case Operation");
             break;
@@ -378,6 +628,7 @@ void Update(Memory *mem)
     if (mem->delay > 0)
     {
         mem->delay--;
+        printf("Delay: %d\n", mem->delay);
     }
 
     if (mem->sound > 0)
@@ -410,28 +661,32 @@ int main(int argc, char **argv)
             SDL_TEXTUREACCESS_STREAMING,
             64, 32);
 
-    SDL_Event e;
-    int exit = 0;
-    while (!exit)
+    SDL_Event event;
+
+    uint32_t timers_span = SDL_GetTicks();
+    uint32_t last_instr = SDL_GetTicks();
+
+    while (!quit)
     {
-        while (SDL_PollEvent(&e) > 0)
+        if ((SDL_GetTicks() - timers_span) > 16)
         {
-            if (e.type == SDL_QUIT)
-            {
-                exit = 1;
-            }
+            timers_span = SDL_GetTicks();
+            Update(&mem);
         }
-
-        ExecuteInstruction(&mem);
-        // Render
-        uint8_t pix[64*32];
-        DisplayToPixel(&mem, pix);
-        SDL_UpdateTexture(texture, NULL, pix, 64);
-        SDL_RenderCopy(renderer, texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
-
+        if (SDL_GetTicks() > last_instr)
+        {
+            last_instr = SDL_GetTicks();
+            GetInput(&event);
+            ExecuteInstruction(&mem);
+            // Render
+            uint8_t pix[64*32];
+            DisplayToPixel(&mem, pix);
+            SDL_UpdateTexture(texture, NULL, pix, 64);
+            SDL_RenderCopy(renderer, texture, NULL, NULL);
+            SDL_RenderPresent(renderer);
+            ++loop_count;
+        }
         //printf("Loop count: %d\n", ++loop_count);
-        ++loop_count;
     }
 
     SDL_Quit();
