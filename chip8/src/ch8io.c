@@ -2,22 +2,30 @@
 
 #include <SDL2/SDL.h>
 
-void InitIO(IOData *data)
+void InitIO(void **window, const char *title)
 {
-    data->window = (void*)SDL_CreateWindow(
-            "CHIP8", 
+    *window = (void*)SDL_CreateWindow(
+            title, 
             SDL_WINDOWPOS_UNDEFINED,
             SDL_WINDOWPOS_UNDEFINED,
-            64 * 8,
-            32 * 8,
-            0);
-    data->renderer = (void*)SDL_CreateRenderer(data->window, -1, 0);
-    data->texture = (void*)SDL_CreateTexture(
-            data->renderer,
+            64 * PIX_SIZE,
+            32 * PIX_SIZE,
+            SDL_WINDOW_RESIZABLE);
+    *(window + 1) = (void*)SDL_CreateRenderer(*window, -1, 0);
+    *(window + 2) = (void*)SDL_CreateTexture(
+            *(window + 1),
             SDL_PIXELFORMAT_RGB332,
             SDL_TEXTUREACCESS_STREAMING,
             64, 32);
     
+}
+
+void CloseIO(void **window)
+{
+    SDL_DestroyTexture(*(window+2));
+    SDL_DestroyRenderer(*(window+1));
+    SDL_DestroyWindow(*window);
+    SDL_Quit();
 }
 
 uint8_t GetInput(uint8_t *keys)
@@ -192,16 +200,16 @@ static void DisplayToPixel(uint8_t *display, uint8_t *pix)
     }
 }
 
-void RenderBitmap(IOData *data, uint8_t *bitmap)
+void RenderBitmap(void **window, uint8_t *bitmap)
 {
-    if (!data || !data->window)
+    if (!*window++)
     {
         // I/O data struct not initialized
         return;
     }
 
-    SDL_Renderer *renderer = (SDL_Renderer*)data->renderer;
-    SDL_Texture *texture = (SDL_Texture*)data->texture;
+    SDL_Renderer *renderer = (SDL_Renderer*)*window++;
+    SDL_Texture *texture = (SDL_Texture*)*window;
 
     uint8_t pix[64*32];
     DisplayToPixel(bitmap, pix);
@@ -214,3 +222,4 @@ uint32_t TimeMS()
 {
     return SDL_GetTicks();
 }
+
