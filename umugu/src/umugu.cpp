@@ -26,8 +26,8 @@ static int AudioCallback(const void *inputBuffer, void *outputBuffer, unsigned l
 		*(out + 1) = 0.0f;
 		for (int j = 0; j < data->wave_count; ++j)
 		{
-			*out += data->sine[data->left_phase[j]];
-			*(out + 1) += data->sine[data->right_phase[j]];
+			*out += data->wave_table[data->wave_shape[j]][data->left_phase[j]];
+			*(out + 1) += data->wave_table[data->wave_shape[j]][data->right_phase[j]];
 			data->left_phase[j] += data->freq[j];
 			data->right_phase[j] += data->freq[j];
 			if (data->left_phase[j] >= SAMPLE_RATE)
@@ -47,19 +47,65 @@ namespace umugu
 {
 	AudioCallbackData data;
 	Window window;
+	float plot_x[SAMPLE_RATE];
+	const char *const SHAPE_NAMES[] = {
+		"SINE",
+		"SAW",
+		"SQUARE",
+		"TRIANGLE",
+		"WHITE_NOISE"
+	};
 
 	void Init()
 	{
+		const float LINEAR_STEP = (1.0f / (SAMPLE_RATE / 4.0f));
 		data.wave_count = 1;
 		for (int i = 0; i < MAX_WAVES; ++i) {
 			data.freq[i] = 440;
 			data.left_phase[i] = 0;
 			data.right_phase[i] = 0;
+			data.wave_shape[i] = WS_SINE;
+		}
+
+		float lerp = 0.0f;
+		for (int i = 0; i < SAMPLE_RATE; ++i) {
+			float cos_value = cosf((i/(float)SAMPLE_RATE) * M_PI * 2.0f);
+			data.wave_table[WS_TRIANGLE][i] = lerp;
+			//data.wave_table[WS_SQUARE2][i] = round(lerp);
+			lerp += (cos_value > 0.0f ? LINEAR_STEP : -LINEAR_STEP);
 		}
 		
 		for (int i = 0; i < SAMPLE_RATE; ++i) {
-			data.sine[i] = sinf((i/(float)SAMPLE_RATE) * M_PI * 2.0f);
+			float sine_value = sinf((i/(float)SAMPLE_RATE) * M_PI * 2.0f);
+			data.wave_table[WS_SINE][i] = sine_value;
+			data.wave_table[WS_SQUARE][i] = sine_value > 0.0f ? 1.0f : -1.0f;
 		}
+
+		for (int i = 0; i < SAMPLE_RATE; ++i) {
+			data.wave_table[WS_SAW][i] = (float)i / (SAMPLE_RATE / 2.0f);
+			if (i > (SAMPLE_RATE / 2.0f)) {
+				data.wave_table[WS_SAW][i] -= 2.0f;
+			}
+		}
+
+		/*for (int i = 0; i < SAMPLE_RATE; ++i) {
+			data.wave_table[WS_SAW_DESC][i] = data.wave_table[WS_SAW][SAMPLE_RATE - 1 - i];
+		}*/
+
+		int g_x1 = 0x67452301;
+		int g_x2 = 0xefcdab89;
+		for (int i = 0; i < SAMPLE_RATE; ++i) {
+			g_x1 ^= g_x2;
+			data.wave_table[WS_WHITE_NOISE][i] = g_x2 * (2.0f / 0xffffffff);
+			g_x2 += g_x1;
+		}
+
+		float *x = plot_x;
+		float value = 0.0f;
+		float fsample_rate = (float)SAMPLE_RATE;
+		do {
+			*x = value++;
+		} while (*x++ < fsample_rate);
 
                 err = Pa_Initialize();
                 if (err != paNoError)

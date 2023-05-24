@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "umugu.h"
 #include "imgui.h"
+#include "implot.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
 
@@ -12,6 +13,8 @@
 #endif
 
 #include <cstdio>
+
+#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, data.wave_table[WS], SAMPLE_RATE); ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
 static bool show_demo_window = true;
@@ -62,6 +65,7 @@ void InitUI()
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
+	ImPlot::CreateContext();
 	io = &ImGui::GetIO();
 	io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -103,7 +107,14 @@ void DrawUI()
 	ImGui::Checkbox("Demo Window", &show_demo_window);
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io->Framerate, io->Framerate);
 	ImGui::InputInt("Number of Waves", &data.wave_count);
-	ImGui::PlotLines("Wave shape", data.sine, SAMPLE_RATE);
+	if (ImPlot::BeginPlot("Wave form")) {
+		PLOT_WAVE_SHAPE(WS_SINE, 1.0f, 0.0f, 0.0f);
+		PLOT_WAVE_SHAPE(WS_SAW, 0.0f, 1.0f, 0.0f);
+		PLOT_WAVE_SHAPE(WS_SQUARE, 0.0f, 0.0f, 1.0f);
+		PLOT_WAVE_SHAPE(WS_TRIANGLE, 1.0f, 0.0f, 1.0f);
+		PLOT_WAVE_SHAPE(WS_WHITE_NOISE, 1.0f, 1.0f, 0.0f);
+		ImPlot::EndPlot();
+	}
 	ImGui::End();
 
 	char buffer[128];
@@ -113,6 +124,19 @@ void DrawUI()
 		sprintf(buffer, "Wave %d", i + 1);
 		ImGui::Begin(buffer);
 		ImGui::InputInt("Frequency", &(data.freq[i]), 1, data.freq[i]);
+		if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[data.wave_shape[i]], 0)) {
+			for (int j = 0; j < WS_COUNT; ++j) {
+				const bool selected = (data.wave_shape[i] == j);
+				if (ImGui::Selectable(SHAPE_NAMES[j], selected)) {
+					data.wave_shape[i] = j;
+				}
+
+				if (selected) {
+					ImGui::SetItemDefaultFocus();
+				}
+			}
+			ImGui::EndCombo();
+		}
 		ImGui::End();
 	}
 
@@ -123,14 +147,14 @@ void DrawUI()
 
 void CloseUI()
 {
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplSDL2_Shutdown();
+	ImPlot::DestroyContext();
+	ImGui::DestroyContext();
 
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
-
-    SDL_GL_DeleteContext(window.gl_context);
-    SDL_DestroyWindow((SDL_Window*)window.native_win);
-    SDL_Quit();
+	SDL_GL_DeleteContext(window.gl_context);
+	SDL_DestroyWindow((SDL_Window*)window.native_win);
+	SDL_Quit();
 }
 
 } // namespace umugu

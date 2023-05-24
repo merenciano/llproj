@@ -5,12 +5,25 @@
 
 namespace umugu 
 {
+enum WaveShape
+{
+	WS_SINE,
+	WS_SAW,
+	WS_SQUARE,
+	WS_TRIANGLE,
+	WS_WHITE_NOISE,
+	WS_COUNT
+};
+
+extern const char *const SHAPE_NAMES[];
+
 struct AudioCallbackData
 {
 	int freq[MAX_WAVES];
 	int left_phase[MAX_WAVES];
 	int right_phase[MAX_WAVES];
-	float sine[SAMPLE_RATE];
+	int wave_shape[MAX_WAVES];
+	float wave_table[WS_COUNT][SAMPLE_RATE];
 	int wave_count;
 };
 
@@ -25,6 +38,7 @@ struct Window
 
 extern AudioCallbackData data;
 extern Window window;
+extern float plot_x[SAMPLE_RATE];
 void Init();
 bool PollEvents();
 void Render();
