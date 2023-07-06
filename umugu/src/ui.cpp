@@ -1,6 +1,7 @@
 #include "ui.h"
 #include "umugu.h"
 #include "imgui.h"
+#include "node.h"
 #include "implot.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
@@ -14,7 +15,7 @@
 
 #include <cstdio>
 
-#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, data.wave_table[WS], SAMPLE_RATE); ImPlot::PopStyleColor()
+#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, WaveTable(WS), SAMPLE_RATE); ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
 static bool show_demo_window = true;
@@ -91,9 +92,9 @@ bool PollWindowEvents()
 
 void DrawUI()
 {
-        glViewport(0, 0, (int)io->DisplaySize.x, (int)io->DisplaySize.y);
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
+	glViewport(0, 0, (int)io->DisplaySize.x, (int)io->DisplaySize.y);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
 
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplSDL2_NewFrame();
@@ -115,9 +116,12 @@ void DrawUI()
 		PLOT_WAVE_SHAPE(WS_WHITE_NOISE, 1.0f, 1.0f, 0.0f);
 		ImPlot::EndPlot();
 	}
+
+	last->Show();	
+
 	ImGui::End();
 
-	char buffer[128];
+	/*char buffer[128];
 	for (int i = 0; i < data.wave_count; ++i)
 	{
 		memset(buffer, '\0', 128);
@@ -139,6 +143,7 @@ void DrawUI()
 		}
 		ImGui::End();
 	}
+	*/
 
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
@@ -155,6 +160,30 @@ void CloseUI()
 	SDL_GL_DeleteContext(window.gl_context);
 	SDL_DestroyWindow((SDL_Window*)window.native_win);
 	SDL_Quit();
+}
+
+void Osciloscope::Show()
+{
+	ImGui::Begin("Osciloscope");
+	ImGui::InputInt("Frequency", &freq, 1, 10, 0);
+	if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[shape], 0))
+	{
+		for (int j = 0; j < WS_COUNT; ++j)
+		{
+			const bool selected = (shape == (WaveShape)j);
+			if (ImGui::Selectable(SHAPE_NAMES[j], selected))
+			{
+				shape = (WaveShape)j;
+			}
+
+			if (selected)
+			{
+				ImGui::SetItemDefaultFocus();
+			}
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::End();
 }
 
 } // namespace umugu

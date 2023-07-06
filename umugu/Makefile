@@ -14,7 +14,7 @@
 #CXX = g++
 #CXX = clang++
 
-EXE = bin/sisi
+EXE = bin/umugu
 IMGUI_DIR = extern/imgui
 OBJ_DIR = build
 SOURCES = $(wildcard src/*.cpp)

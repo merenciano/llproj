@@ -1,21 +1,10 @@
-
-#define SAMPLE_RATE 44100
-#define FRAMES_PER_BUFFER 60
-#define MAX_WAVES 32
+#include "config.h"
 
 namespace umugu 
 {
-enum WaveShape
-{
-	WS_SINE,
-	WS_SAW,
-	WS_SQUARE,
-	WS_TRIANGLE,
-	WS_WHITE_NOISE,
-	WS_COUNT
-};
 
 extern const char *const SHAPE_NAMES[];
+extern float *WaveTable(WaveShape ws);
 
 struct AudioCallbackData
 {
@@ -23,7 +12,6 @@ struct AudioCallbackData
 	int left_phase[MAX_WAVES];
 	int right_phase[MAX_WAVES];
 	int wave_shape[MAX_WAVES];
-	float wave_table[WS_COUNT][SAMPLE_RATE];
 	int wave_count;
 };
 
