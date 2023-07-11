@@ -1,3 +1,4 @@
+#if 0
 #ifndef __UMUGU_NODE_H__
 #define __UMUGU_NODE_H__
 
@@ -39,6 +40,14 @@ public:
 	int phase;
 };
 
+class Mixer : public Node
+{
+public:
+	Mixer();
+	void operator()() override;
+	void Show() override;
+};
+
 extern Node *last;
 template <typename T>
 Node* CreateNode() { return new T(); }
@@ -46,3 +55,4 @@ void* Process(Node *node);
 }
 
 #endif // __UMUGU_NODE_H__
+#endif

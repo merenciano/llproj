@@ -1,4 +1,6 @@
+#if 0
 #include "node.h"
+#include "config.h"
 
 #include <math.h>
 
@@ -8,6 +10,10 @@ Node *last;
 
 void *Process(Node *n)
 {
+	for (auto child : n->in)
+	{
+		Process(child);
+	}
 	(*n)();
 	return n->wave;
 }
@@ -83,4 +89,21 @@ void Osciloscope::operator()()
 		}
 	}
 }
+
+Mixer::Mixer() : Node() {}
+
+void Mixer::operator()()
+{
+	for (int i = 0; i < FRAMES_PER_BUFFER; ++i)
+	{
+		for (auto *n : in)
+		{
+			wave[i].left += n->wave[i].left;
+			wave[i].right += n->wave[i].right;
+		}
+		wave[i].left /= in.size();
+		wave[i].right /= in.size();
+	}
 }
+}
+#endif

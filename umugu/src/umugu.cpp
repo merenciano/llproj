@@ -1,11 +1,15 @@
 #include "umugu.h"
-#include "node.h"
 #include "ui.h"
-#include "node.h"
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
 #include <portaudio.h>
+
+#define UMUGU_IMPLEMENTATION
+#include "umugu_single.h"
+
+
+umugu_unit graph_fx;
 
 static PaStreamParameters output_params;
 static PaStream *stream;
@@ -20,46 +24,17 @@ static void Terminate()
 	exit(err);
 }
 
-static int AudioCallback(const void *in, void *out, unsigned long fpb, const PaStreamCallbackTimeInfo *timeInfo, PaStreamCallbackFlags statusFlags, void *userData)
+static int AudioCallback(const void *in, void *out, unsigned long fpb, const PaStreamCallbackTimeInfo *timeinfo, PaStreamCallbackFlags flags, void *data)
 {
-	memcpy(out, umugu::Process(umugu::last), sizeof(umugu::WaveValue) * FRAMES_PER_BUFFER);
-
-	/*
-	umugu::AudioCallbackData *data = (umugu::AudioCallbackData*)userData;
-	float *out = (float*)outputBuffer;
-	for (unsigned long i = 0; i < framesPerBuffer; i++)
-	{
-		*out = 0.0f;
-		*(out + 1) = 0.0f;
-		for (int j = 0; j < data->wave_count; ++j)
-		{
-			*out += wave_table[data->wave_shape[j]][data->left_phase[j]];
-			*(out + 1) += wave_table[data->wave_shape[j]][data->right_phase[j]];
-			data->left_phase[j] += data->freq[j];
-			data->right_phase[j] += data->freq[j];
-			if (data->left_phase[j] >= SAMPLE_RATE)
-			{
-				data->left_phase[j] -= SAMPLE_RATE;
-			}
-
-			if (data->right_phase[j] >= SAMPLE_RATE)
-			{
-				data->right_phase[j] -= SAMPLE_RATE;
-			}
-		}
-		*out++ /= data->wave_count;
-		*out++ /= data->wave_count;
-	}
-	*/
-
+	void *wave = umugu_getwave(graph_fx);
+	memcpy(out, wave, sizeof(umugu_wave) * UMUGU_FRAMES_PER_BUFFER);
 	return 0;
 }
 
 namespace umugu 
 {
-	AudioCallbackData data;
 	Window window;
-	float plot_x[SAMPLE_RATE];
+	float plot_x[UMUGU_SAMPLE_RATE];
 
 	const char *const SHAPE_NAMES[] = {
 		"SINE",
@@ -69,26 +44,11 @@ namespace umugu
 		"WHITE_NOISE"
 	};
 
-	float *WaveTable(WaveShape ws)
-	{
-		return wave_table[ws];
-	}
-
 	void Init()
 	{
-		data.wave_count = 1;
-		for (int i = 0; i < MAX_WAVES; ++i)
-		{
-			data.freq[i] = 440;
-			data.left_phase[i] = 0;
-			data.right_phase[i] = 0;
-			data.wave_shape[i] = WS_SINE;
-		}
-
-
 		float *x = plot_x;
 		float value = 0.0f;
-		float fsample_rate = (float)SAMPLE_RATE;
+		float fsample_rate = (float)UMUGU_SAMPLE_RATE;
 
 		do
 		{
@@ -114,16 +74,28 @@ namespace umugu
 		output_params.suggestedLatency = Pa_GetDeviceInfo(output_params.device)->defaultLowOutputLatency;
 		output_params.hostApiSpecificStreamInfo = NULL;
 
-		GenWaveTable();
-		last = CreateNode<Osciloscope>();
+		umugu_init();
+		static umugu_osciloscope_data osc_data[2];
+		osc_data[0]._phase = 0;
+		osc_data[0].freq = 220;
+		osc_data[0].shape = UMUGU_WS_SINE;
+
+		osc_data[1]._phase = 0;
+		osc_data[1].freq = 440;
+		osc_data[1].shape = UMUGU_WS_SINE;
+
+
+		graph_fx = umugu_newunit(UMUGU_NT_MIX, NULL, NULL);
+		umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[0], graph_fx);
+		umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[1], graph_fx);
 		InitUI();
 	}
 
 	void StartAudioStream()
 	{
-		err = Pa_OpenStream(&stream, NULL, &output_params, SAMPLE_RATE,
-							FRAMES_PER_BUFFER, paClipOff, AudioCallback,
-							&data);
+		err = Pa_OpenStream(&stream, NULL, &output_params, UMUGU_SAMPLE_RATE,
+							UMUGU_FRAMES_PER_BUFFER, paClipOff, AudioCallback,
+							NULL);
 		if (err != paNoError)
 		{
 			Terminate();

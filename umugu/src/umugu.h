@@ -1,19 +1,10 @@
-#include "config.h"
+#define UMUGU_SAMPLE_RATE 44100
+#define UMUGU_FRAMES_PER_BUFFER 60
 
 namespace umugu 
 {
 
 extern const char *const SHAPE_NAMES[];
-extern float *WaveTable(WaveShape ws);
-
-struct AudioCallbackData
-{
-	int freq[MAX_WAVES];
-	int left_phase[MAX_WAVES];
-	int right_phase[MAX_WAVES];
-	int wave_shape[MAX_WAVES];
-	int wave_count;
-};
 
 struct Window
 {
@@ -24,12 +15,13 @@ struct Window
 	void *gl_context;
 };
 
-extern AudioCallbackData data;
 extern Window window;
-extern float plot_x[SAMPLE_RATE];
+extern float plot_x[UMUGU_SAMPLE_RATE];
 void Init();
 bool PollEvents();
 void Render();
 void StartAudioStream();
 void Close();
 }
+
+extern void *graph_fx;

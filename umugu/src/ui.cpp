@@ -1,7 +1,8 @@
 #include "ui.h"
 #include "umugu.h"
+#include "umugu_single.h"
 #include "imgui.h"
-#include "node.h"
+//#include "node.h"
 #include "implot.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
@@ -13,15 +14,76 @@
 #include <SDL_opengl.h>
 #endif
 
-#include <cstdio>
-
-#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, WaveTable(WS), SAMPLE_RATE); ImPlot::PopStyleColor()
+#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_wave_table(WS), UMUGU_SAMPLE_RATE); ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
 static bool show_demo_window = true;
 
 namespace umugu
 {
+static void DrawUnitUI(umugu_unit unit)
+{
+	umugu_node *n = (umugu_node*)unit;
+	switch(n->type)
+	{
+		case UMUGU_NT_OSCILOSCOPE:
+		{
+			umugu_osciloscope_data *d = (umugu_osciloscope_data*)n->data;
+			ImGui::Text("Osciloscope");
+			if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[d->shape], 0))
+			{
+				for (int j = 0; j < UMUGU_WS_COUNT; ++j)
+				{
+					const bool selected = (d->shape == (umugu_wave_shape)j);
+					if (ImGui::Selectable(SHAPE_NAMES[j], selected))
+					{
+						d->shape = (umugu_wave_shape)j;
+					}
+
+					if (selected)
+					{
+						ImGui::SetItemDefaultFocus();
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::InputInt("Frequency", &d->freq, 1, 10, 0);
+			break;
+		}
+
+		case UMUGU_NT_MIX:
+		{
+			ImGui::Text("Mix");
+			break;
+		}
+
+		default: break;
+	}
+}
+
+static void IterateGraphAndShowNodes(umugu_unit unit)
+{
+	ImGui::PushID(unit);
+	DrawUnitUI(unit);
+	if (ImGui::TreeNode("Unit"))
+	{
+		umugu_node *n = (umugu_node*)unit;
+		for (umugu_unit_list *in = n->in; in; in = in->next)
+		{
+			IterateGraphAndShowNodes(in->unit);
+		}
+		ImGui::TreePop();
+	}
+	ImGui::PopID();
+}
+
+static void GraphWindow()
+{
+	ImGui::Begin("Graph");
+	IterateGraphAndShowNodes(graph_fx);
+	ImGui::End();
+}
+
 void InitUI()
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
@@ -104,20 +166,19 @@ void DrawUI()
 		ImGui::ShowDemoWindow(&show_demo_window);
 	}
 
+	GraphWindow();
+
 	ImGui::Begin("Hello, world!");
 	ImGui::Checkbox("Demo Window", &show_demo_window);
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io->Framerate, io->Framerate);
-	ImGui::InputInt("Number of Waves", &data.wave_count);
 	if (ImPlot::BeginPlot("Wave form")) {
-		PLOT_WAVE_SHAPE(WS_SINE, 1.0f, 0.0f, 0.0f);
-		PLOT_WAVE_SHAPE(WS_SAW, 0.0f, 1.0f, 0.0f);
-		PLOT_WAVE_SHAPE(WS_SQUARE, 0.0f, 0.0f, 1.0f);
-		PLOT_WAVE_SHAPE(WS_TRIANGLE, 1.0f, 0.0f, 1.0f);
-		PLOT_WAVE_SHAPE(WS_WHITE_NOISE, 1.0f, 1.0f, 0.0f);
+		PLOT_WAVE_SHAPE(UMUGU_WS_SINE, 1.0f, 0.0f, 0.0f);
+		PLOT_WAVE_SHAPE(UMUGU_WS_SAW, 0.0f, 1.0f, 0.0f);
+		PLOT_WAVE_SHAPE(UMUGU_WS_SQUARE, 0.0f, 0.0f, 1.0f);
+		PLOT_WAVE_SHAPE(UMUGU_WS_TRIANGLE, 1.0f, 0.0f, 1.0f);
+		PLOT_WAVE_SHAPE(UMUGU_WS_WHITE_NOISE, 1.0f, 1.0f, 0.0f);
 		ImPlot::EndPlot();
 	}
-
-	last->Show();	
 
 	ImGui::End();
 
@@ -160,30 +221,6 @@ void CloseUI()
 	SDL_GL_DeleteContext(window.gl_context);
 	SDL_DestroyWindow((SDL_Window*)window.native_win);
 	SDL_Quit();
-}
-
-void Osciloscope::Show()
-{
-	ImGui::Begin("Osciloscope");
-	ImGui::InputInt("Frequency", &freq, 1, 10, 0);
-	if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[shape], 0))
-	{
-		for (int j = 0; j < WS_COUNT; ++j)
-		{
-			const bool selected = (shape == (WaveShape)j);
-			if (ImGui::Selectable(SHAPE_NAMES[j], selected))
-			{
-				shape = (WaveShape)j;
-			}
-
-			if (selected)
-			{
-				ImGui::SetItemDefaultFocus();
-			}
-		}
-		ImGui::EndCombo();
-	}
-	ImGui::End();
 }
 
 } // namespace umugu
