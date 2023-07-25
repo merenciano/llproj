@@ -5,6 +5,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -15,8 +16,8 @@
       "build/main.o",
       "src/main.cpp"
     ],
-    "directory": "/home/lucas/devel/llproj/umugu",
-    "file": "/home/lucas/devel/llproj/umugu/src/main.cpp",
+    "directory": "/home/lucas/devel/llproj/umugu/tools/editor",
+    "file": "/home/lucas/devel/llproj/umugu/tools/editor/src/main.cpp",
     "output": "/home/lucas/devel/llproj/umugu/build/main.o"
   },
   {
@@ -25,6 +26,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -32,12 +34,12 @@
       "-D_REENTRANT",
       "-c",
       "-o",
-      "build/sisi.o",
-      "src/sisi.cpp"
+      "build/main.o",
+      "src/main.cpp"
     ],
-    "directory": "/home/lucas/devel/llproj/umugu",
-    "file": "/home/lucas/devel/llproj/umugu/src/sisi.cpp",
-    "output": "/home/lucas/devel/llproj/umugu/build/sisi.o"
+    "directory": "/home/lucas/devel/llproj/umugu/tools/editor",
+    "file": "/home/lucas/devel/llproj/umugu/tools/editor/src/umugu_editor.cpp",
+    "output": "/home/lucas/devel/llproj/umugu/tools/editor/build/umugu_editor.o"
   },
   {
     "arguments": [
@@ -45,6 +47,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -65,6 +68,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -75,9 +79,9 @@
       "build/imgui_demo.o",
       "extern/imgui/imgui_demo.cpp"
     ],
-    "directory": "/home/lucas/devel/llproj/umugu",
-    "file": "/home/lucas/devel/llproj/umugu/extern/imgui/imgui_demo.cpp",
-    "output": "/home/lucas/devel/llproj/umugu/build/imgui_demo.o"
+    "directory": "/home/lucas/devel/llproj/umugu/tools/editor",
+    "file": "/home/lucas/devel/llproj/umugu/tools/editor/extern/imgui/imgui_demo.cpp",
+    "output": "/home/lucas/devel/llproj/umugu/tools/editor/build/imgui_demo.o"
   },
   {
     "arguments": [
@@ -85,6 +89,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -105,6 +110,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -125,6 +131,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -145,6 +152,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",
@@ -165,6 +173,7 @@
       "-std=c++11",
       "-Iextern/imgui",
       "-Iextern/imgui/backends",
+      "-I../../.",
       "-g",
       "-Wall",
       "-Wformat",

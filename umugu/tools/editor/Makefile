@@ -14,19 +14,18 @@
 #CXX = g++
 #CXX = clang++
 
-EXE = bin/umugu
+EXE = UmuguEditor
 IMGUI_DIR = extern/imgui
 OBJ_DIR = build
 SOURCES = $(wildcard src/*.cpp)
 SOURCES += $(wildcard $(IMGUI_DIR)/*.cpp)
-#SOURCES += $(wildcard $(IMGUI_DIR)/backends/*.cpp)
-SOURCES += $(IMGUI_DIR)/backends/imgui_impl_sdl2.cpp $(IMGUI_DIR)/backends/imgui_impl_opengl3.cpp
+SOURCES += $(wildcard $(IMGUI_DIR)/backends/*.cpp)
 OBJS = $(addsuffix .o, $(addprefix $(addsuffix /, $(OBJ_DIR)), $(basename $(notdir $(SOURCES)))))
 UNAME_S := $(shell uname -s)
 LINUX_GL_LIBS = -lGL
 
-CXXFLAGS = -std=c++11 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends
-CXXFLAGS += -g -Wall -Wformat
+CXXFLAGS = -std=c++11 -I$(IMGUI_DIR) -I$(IMGUI_DIR)/backends -I../../.
+CXXFLAGS += -g -Wall -Wformat -O0
 LIBS =
 
 ##---------------------------------------------------------------------
@@ -88,6 +87,9 @@ all: $(EXE)
 
 $(EXE): $(OBJS)
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LIBS)
+
+softclean:
+	rm -f $(EXE) ./build/umugu_editor.o ./build/main.o
 
 clean:
 	rm -f $(EXE) $(OBJS)

@@ -1,3 +1,9 @@
+/*
+	TODO: 
+	- Allocator (PerBufferAlloc, PersistentAlloc) Only those 2 are needed.
+	- Data organization and serialization.
+*/
+
 #ifndef UMUGU_H
 #define UMUGU_H
 
@@ -48,7 +54,7 @@ typedef struct {
 } umugu_wave;
 
 typedef struct {
-	umugu_wave wave[UMUGU_FRAMES_PER_BUFFER];
+	umugu_wave *out;
 	umugu_unit_list *in;
 	umugu_node_type type;	
 	void *data;
@@ -61,6 +67,9 @@ typedef struct {
 } umugu_osciloscope_data;
 
 UMUGU_DEF void umugu_init();
+UMUGU_DEF void umugu_close();
+UMUGU_DEF void umugu_start_stream(umugu_unit output_unit);
+UMUGU_DEF void umugu_stop_stream();
 UMUGU_DEF umugu_unit umugu_newunit(umugu_node_type type, void *data, umugu_unit parent);
 UMUGU_DEF void umugu_setparent(umugu_unit unit, umugu_unit parent);
 UMUGU_DEF umugu_wave *umugu_getwave(umugu_unit unit);
@@ -73,6 +82,24 @@ UMUGU_DEF float *umugu_wave_table(umugu_wave_shape shape);
 
 #include <stdlib.h>
 #include <math.h>
+
+static umugu_wave umugu__mem[UMUGU_FRAMES_PER_BUFFER * 2];
+static umugu_wave *umugu__mem_it;
+
+static void umugu__alloc_free()
+{
+	umugu__mem_it = umugu__mem;
+} 
+
+static umugu_wave *umugu__alloc_wave_buffer()
+{
+	umugu_wave *ret = umugu__mem_it;
+	umugu__mem_it += UMUGU_FRAMES_PER_BUFFER;
+	return ret;
+}
+
+static void umugu__init_backend();
+static void umugu__close_backend();
 
 static float umugu__wave_table[UMUGU_WS_COUNT][UMUGU_SAMPLE_RATE];
 
@@ -88,10 +115,11 @@ static void umugu__process(umugu_node *node)
 	case UMUGU_NT_OSCILOSCOPE:
 	{
 		umugu_osciloscope_data *data = (umugu_osciloscope_data*)node->data;
+		node->out = umugu__alloc_wave_buffer();
 		for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
 		{
-			node->wave[i].left = umugu__wave_table[data->shape][data->_phase];
-			node->wave[i].right = umugu__wave_table[data->shape][data->_phase];
+			node->out[i].left = umugu__wave_table[data->shape][data->_phase];
+			node->out[i].right = umugu__wave_table[data->shape][data->_phase];
 			data->_phase += data->freq;
 			if (data->_phase >= UMUGU_SAMPLE_RATE)
 			{
@@ -109,17 +137,16 @@ static void umugu__process(umugu_node *node)
 			count++;
 		}
 
+		node->out = ((umugu_node*)node->in->unit)->out;
 		for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
 		{
-			node->wave[i].left = 0.0f;
-			node->wave[i].right = 0.0f;
-			for (umugu_unit_list *in = node->in; in; in = in->next)
+			for (umugu_unit_list *in = node->in->next; in; in = in->next)
 			{
-				node->wave[i].left += ((umugu_node*)in->unit)->wave[i].left;
-				node->wave[i].right += ((umugu_node*)in->unit)->wave[i].right;
+				node->out[i].left += ((umugu_node*)in->unit)->out[i].left;
+				node->out[i].right += ((umugu_node*)in->unit)->out[i].right;
 			}
-			node->wave[i].left /= count;
-			node->wave[i].right /= count;
+			node->out[i].left /= count;
+			node->out[i].right /= count;
 		}
 		break;
 	}
@@ -134,7 +161,8 @@ static void umugu__process(umugu_node *node)
 UMUGU_DEF umugu_wave *umugu_getwave(umugu_unit unit)
 {
 	umugu__process((umugu_node*)unit);
-	return ((umugu_node*)unit)->wave;
+	umugu__alloc_free();
+	return ((umugu_node*)unit)->out;
 }
 
 UMUGU_DEF void umugu_setparent(umugu_unit unit, umugu_unit parent)
@@ -214,6 +242,99 @@ UMUGU_DEF void umugu_init()
 		umugu__wave_table[UMUGU_WS_WHITE_NOISE][i] = g_x2 * (2.0f / 0xffffffff);
 		g_x2 += g_x1;
 	}
+
+	umugu__alloc_free();
+	umugu__init_backend();
 }
 
+UMUGU_DEF void umugu_close()
+{
+	umugu__close_backend();
+}
+
+// INPUT / OUTPUT BACKENDS IMPLEMENTATION
+
+#ifdef UMUGU_IO_PORTAUDIO // Portaudio backend.
+
+#include <portaudio.h>
+#include <stdio.h>
+#include <string.h>
+
+#define umugu__pa_check_err() if (umugu__pa_err != paNoError) umugu__pa_terminate()
+
+static PaStreamParameters umugu__pa_output_params;
+static PaStream *umugu__pa_stream;
+static PaError umugu__pa_err;
+static umugu_unit umugu__pa_output;
+
+static void umugu__pa_terminate()
+{
+	Pa_Terminate();
+	printf("An error occurred while using the portaudio stream.\n");
+	printf("Error number: %d.\n", umugu__pa_err);
+	printf("Error message: %s.\n", Pa_GetErrorText(umugu__pa_err));
+	exit(umugu__pa_err);
+}
+
+static int umugu__pa_callback(const void *in, void *out,
+		unsigned long fpb, const PaStreamCallbackTimeInfo *timeinfo,
+		PaStreamCallbackFlags flags, void *data)
+{
+	void *wave = umugu_getwave(umugu__pa_output);
+	memcpy(out, wave, sizeof(umugu_wave) * UMUGU_FRAMES_PER_BUFFER);
+	return 0;
+}
+
+UMUGU_DEF void umugu_start_stream(umugu_unit output_unit)
+{
+	umugu__pa_output = output_unit;
+	umugu__pa_err = Pa_StartStream(umugu__pa_stream);
+	umugu__pa_check_err();
+}
+
+UMUGU_DEF void umugu_stop_stream()
+{
+	umugu__pa_err = Pa_StopStream(umugu__pa_stream);
+	umugu__pa_check_err();
+}
+
+static void umugu__init_backend()
+{
+	umugu__pa_err = Pa_Initialize();
+	umugu__pa_check_err();
+
+	umugu__pa_output_params.device = Pa_GetDefaultOutputDevice();
+	if (umugu__pa_output_params.device == paNoDevice)
+	{
+		fprintf(stderr, "Error: No default output device.\n");
+		umugu__pa_terminate();
+	}
+
+	umugu__pa_output_params.channelCount = 2;
+	umugu__pa_output_params.sampleFormat = paFloat32;
+	umugu__pa_output_params.suggestedLatency =
+		Pa_GetDeviceInfo(umugu__pa_output_params.device)->defaultLowOutputLatency;
+	umugu__pa_output_params.hostApiSpecificStreamInfo = NULL;
+
+	umugu__pa_err = Pa_OpenStream(&umugu__pa_stream, NULL, &umugu__pa_output_params,
+		UMUGU_SAMPLE_RATE, UMUGU_FRAMES_PER_BUFFER, paClipOff, umugu__pa_callback, NULL);
+
+	umugu__pa_check_err();
+}
+
+static void umugu__close_backend()
+{
+	umugu__pa_err = Pa_CloseStream(umugu__pa_stream);
+	umugu__pa_check_err();
+	Pa_Terminate();
+}
+
+#else // Dummy IO backend.
+
+UMUGU_DEF void umugu_start_stream(umugu_unit output_unit) {}
+UMUGU_DEF void umugu_stop_stream() {}
+static void umugu__init_backend() {}
+static void umugu__close_backend() {}
+
+#endif // IO backends.
 #endif // UMUGU_IMPLEMENTATION

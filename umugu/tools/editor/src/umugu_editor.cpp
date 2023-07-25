@@ -1,8 +1,10 @@
-#include "ui.h"
+#include "umugu_editor.h"
+
+#define UMUGU_IO_PORTAUDIO
+#define UMUGU_IMPLEMENTATION
 #include "umugu.h"
-#include "umugu_single.h"
+
 #include "imgui.h"
-//#include "node.h"
 #include "implot.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_opengl3.h"
@@ -14,13 +16,37 @@
 #include <SDL_opengl.h>
 #endif
 
-#define PLOT_WAVE_SHAPE(WS, R, G, B) ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_wave_table(WS), UMUGU_SAMPLE_RATE); ImPlot::PopStyleColor()
+#define PLOT_WAVE_SHAPE(WS, R, G, B) \
+	ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); \
+	ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_wave_table(WS), UMUGU_SAMPLE_RATE); \
+	ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
 static bool show_demo_window = true;
 
-namespace umugu
+namespace umugu_editor
 {
+struct Window
+{
+	void *native_win;
+	const char *title;
+	int width, height;
+	const char *glsl_ver;
+	void *gl_context;
+};
+
+umugu_unit graph_fx;
+Window window;
+float plot_x[UMUGU_SAMPLE_RATE];
+
+const char *const SHAPE_NAMES[] = {
+	"SINE",
+	"SAW",
+	"SQUARE",
+	"TRIANGLE",
+	"WHITE_NOISE"
+};
+
 static void DrawUnitUI(umugu_unit unit)
 {
 	umugu_node *n = (umugu_node*)unit;
@@ -84,7 +110,7 @@ static void GraphWindow()
 	ImGui::End();
 }
 
-void InitUI()
+static void InitUI()
 {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0)
 	{
@@ -98,12 +124,6 @@ void InitUI()
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-#elif defined(__APPLE__)
-	window.glsl_ver = "#version 150";
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG); // Always required on Mac
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
 #else
 	window.glsl_ver = "#version 130";
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -139,7 +159,7 @@ void InitUI()
 	ImGui_ImplOpenGL3_Init(window.glsl_ver);
 }
 
-bool PollWindowEvents()
+bool PollEvents()
 {
 	SDL_Event event;
 	while (SDL_PollEvent(&event))
@@ -152,7 +172,7 @@ bool PollWindowEvents()
 	return false;
 }
 
-void DrawUI()
+void Render()
 {
 	glViewport(0, 0, (int)io->DisplaySize.x, (int)io->DisplaySize.y);
     glClearColor(0, 0, 0, 1);
@@ -181,37 +201,12 @@ void DrawUI()
 	}
 
 	ImGui::End();
-
-	/*char buffer[128];
-	for (int i = 0; i < data.wave_count; ++i)
-	{
-		memset(buffer, '\0', 128);
-		sprintf(buffer, "Wave %d", i + 1);
-		ImGui::Begin(buffer);
-		ImGui::InputInt("Frequency", &(data.freq[i]), 1, data.freq[i]);
-		if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[data.wave_shape[i]], 0)) {
-			for (int j = 0; j < WS_COUNT; ++j) {
-				const bool selected = (data.wave_shape[i] == j);
-				if (ImGui::Selectable(SHAPE_NAMES[j], selected)) {
-					data.wave_shape[i] = j;
-				}
-
-				if (selected) {
-					ImGui::SetItemDefaultFocus();
-				}
-			}
-			ImGui::EndCombo();
-		}
-		ImGui::End();
-	}
-	*/
-
 	ImGui::Render();
 	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow((SDL_Window*)window.native_win);
 }
 
-void CloseUI()
+void Close()
 {
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplSDL2_Shutdown();
@@ -221,6 +216,38 @@ void CloseUI()
 	SDL_GL_DeleteContext(window.gl_context);
 	SDL_DestroyWindow((SDL_Window*)window.native_win);
 	SDL_Quit();
-}
 
+	umugu_close();
+}
+ 
+void Init()
+{
+	float *x = plot_x;
+	float value = 0.0f;
+	float fsample_rate = (float)UMUGU_SAMPLE_RATE;
+
+	do
+	{
+		*x = value++;
+	}
+	while (*x++ < fsample_rate);
+
+	umugu_init();
+	static umugu_osciloscope_data osc_data[2];
+	osc_data[0]._phase = 0;
+	osc_data[0].freq = 220;
+	osc_data[0].shape = UMUGU_WS_SINE;
+
+	osc_data[1]._phase = 0;
+	osc_data[1].freq = 440;
+	osc_data[1].shape = UMUGU_WS_SINE;
+
+
+	graph_fx = umugu_newunit(UMUGU_NT_MIX, NULL, NULL);
+	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[0], graph_fx);
+	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[1], graph_fx);
+
+	umugu_start_stream(graph_fx);
+	InitUI();
+}
 } // namespace umugu
