@@ -19,6 +19,8 @@
 #endif
 #endif
 
+#include <stdint.h>
+
 #ifndef UMUGU_FRAMES_PER_BUFFER
 #define UMUGU_FRAMES_PER_BUFFER 60
 #endif
@@ -27,13 +29,23 @@
 #define UMUGU_SAMPLE_RATE 44100
 #endif
 
-typedef void* umugu_unit;
+typedef int umugu_unit;
+
+typedef union {
+	char chars[8];
+	char *label;
+	int64_t hash;
+} umugu_label;
+
+typedef struct {
+	umugu_unit unit, in;	
+} umugu_link;
 
 typedef enum {
 	UMUGU_NT_OSCILOSCOPE = 0,
 	UMUGU_NT_MIX,
 	UMUGU_NT_COUNT
-} umugu_node_type;
+} umugu_type;
 
 typedef enum {
 	UMUGU_WS_SINE = 0,
@@ -42,42 +54,42 @@ typedef enum {
 	UMUGU_WS_TRIANGLE,
 	UMUGU_WS_WHITE_NOISE,
 	UMUGU_WS_COUNT
-} umugu_wave_shape;
-
-typedef struct umugu_unit_list {
-	umugu_unit unit;
-	umugu_unit_list *next;
-} umugu_unit_list;
+} umugu_shape;
 
 typedef struct {
 	float left, right;
 } umugu_wave;
 
 typedef struct {
-	umugu_wave *out;
-	umugu_unit_list *in;
-	umugu_node_type type;	
-	void *data;
-} umugu_node;
-
-typedef struct {
-	umugu_wave_shape shape;
+	umugu_shape shape;
 	int freq;
 	int _phase;
 } umugu_osciloscope_data;
+
+#undef N
+#define N 16
+typedef struct {
+	umugu_type type[N];
+	umugu_wave *out[N];
+	umugu_link link[N];
+	void *data[N];
+	umugu_label label[N]; // TODO: Make optional.
+} umugu_scene;
 
 UMUGU_DEF void umugu_init();
 UMUGU_DEF void umugu_close();
 UMUGU_DEF void umugu_start_stream(umugu_unit output_unit);
 UMUGU_DEF void umugu_stop_stream();
-UMUGU_DEF umugu_unit umugu_newunit(umugu_node_type type, void *data, umugu_unit parent);
+UMUGU_DEF umugu_unit umugu_newunit(umugu_type type, void *data, umugu_unit parent);
 UMUGU_DEF void umugu_setparent(umugu_unit unit, umugu_unit parent);
 UMUGU_DEF umugu_wave *umugu_getwave(umugu_unit unit);
 UMUGU_DEF void umugu_iterate(umugu_unit unit, void(*callback)(umugu_unit));
-UMUGU_DEF float *umugu_wave_table(umugu_wave_shape shape);
+UMUGU_DEF float *umugu_wave_table(umugu_shape shape); // TODO: Make osciloscope with this table optionals (for input audio).
+UMUGU_DEF const umugu_scene *umugu_scene_data();
 
 #endif
 
+#define UMUGU_IMPLEMENTATION
 #ifdef UMUGU_IMPLEMENTATION
 
 #include <stdlib.h>
@@ -102,8 +114,10 @@ static void umugu__init_backend();
 static void umugu__close_backend();
 
 static float umugu__wave_table[UMUGU_WS_COUNT][UMUGU_SAMPLE_RATE];
+static umugu_scene umugu__scene;
+static umugu_unit umugu__last;
 
-static void umugu__process(umugu_node *node)
+/*static void umugu__process(umugu_node *node)
 {
 	for (umugu_unit_list *in = node->in; in; in = in->next)
 	{
@@ -155,6 +169,63 @@ static void umugu__process(umugu_node *node)
 	{
 		break;
 	}
+	}
+}*/
+
+static umugu_wave *umugu__process(umugu_unit unit)
+{
+	umugu_wave *out = NULL;
+	switch (umugu__scene.type[unit])
+	{
+		case UMUGU_NT_OSCILOSCOPE:
+		{
+			umugu_osciloscope_data *data = (umugu_osciloscope_data*)umugu__scene.data[unit];
+			out = umugu__alloc_wave_buffer();
+			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
+			{
+				out[i].left = umugu__wave_table[data->shape][data->_phase];
+				out[i].right = umugu__wave_table[data->shape][data->_phase];
+				data->_phase += data->freq;
+				if (data->_phase >= UMUGU_SAMPLE_RATE)
+				{
+					data->_phase -= UMUGU_SAMPLE_RATE;
+				}
+			}
+			break;
+		}
+
+		case UMUGU_NT_MIX:
+		{
+			int count = 0;
+			for (int i = unit - 1; i >= 0; --i)
+			{
+				if (umugu__scene.link[i].unit == unit)
+				{
+					count++;
+				}
+			}
+
+			node->out = ((umugu_node*)node->in->unit)->out;
+			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
+			{
+				for (umugu_unit_list *in = node->in->next; in; in = in->next)
+				{
+					node->out[i].left += ((umugu_node*)in->unit)->out[i].left;
+					node->out[i].right += ((umugu_node*)in->unit)->out[i].right;
+				}
+				node->out[i].left /= count;
+				node->out[i].right /= count;
+			}
+			break;
+		}
+	}
+}
+
+UMUGU_DEF umugu_wave *umugu_output()
+{
+	for (int i = 0; i <= umugu__last; ++i)
+	{
+		umugu__scene.link[i].in = 
 	}
 }
 
