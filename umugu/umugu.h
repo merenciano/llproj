@@ -78,18 +78,16 @@ typedef struct {
 
 UMUGU_DEF void umugu_init();
 UMUGU_DEF void umugu_close();
-UMUGU_DEF void umugu_start_stream(umugu_unit output_unit);
+UMUGU_DEF void umugu_start_stream();
 UMUGU_DEF void umugu_stop_stream();
 UMUGU_DEF umugu_unit umugu_newunit(umugu_type type, void *data, umugu_unit parent);
-UMUGU_DEF void umugu_setparent(umugu_unit unit, umugu_unit parent);
-UMUGU_DEF umugu_wave *umugu_getwave(umugu_unit unit);
-UMUGU_DEF void umugu_iterate(umugu_unit unit, void(*callback)(umugu_unit));
+UMUGU_DEF umugu_wave *umugu_output();
 UMUGU_DEF float *umugu_wave_table(umugu_shape shape); // TODO: Make osciloscope with this table optionals (for input audio).
 UMUGU_DEF const umugu_scene *umugu_scene_data();
+UMUGU_DEF int32_t umugu_scene_count();
 
 #endif
 
-#define UMUGU_IMPLEMENTATION
 #ifdef UMUGU_IMPLEMENTATION
 
 #include <stdlib.h>
@@ -116,61 +114,7 @@ static void umugu__close_backend();
 static float umugu__wave_table[UMUGU_WS_COUNT][UMUGU_SAMPLE_RATE];
 static umugu_scene umugu__scene;
 static umugu_unit umugu__last;
-
-/*static void umugu__process(umugu_node *node)
-{
-	for (umugu_unit_list *in = node->in; in; in = in->next)
-	{
-		umugu__process((umugu_node*)in->unit);
-	}
-
-	switch(node->type)
-	{
-	case UMUGU_NT_OSCILOSCOPE:
-	{
-		umugu_osciloscope_data *data = (umugu_osciloscope_data*)node->data;
-		node->out = umugu__alloc_wave_buffer();
-		for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
-		{
-			node->out[i].left = umugu__wave_table[data->shape][data->_phase];
-			node->out[i].right = umugu__wave_table[data->shape][data->_phase];
-			data->_phase += data->freq;
-			if (data->_phase >= UMUGU_SAMPLE_RATE)
-			{
-				data->_phase -= UMUGU_SAMPLE_RATE;
-			}
-		}
-		break;
-	}
-
-	case UMUGU_NT_MIX:
-	{
-		int count = 0;
-		for (umugu_unit_list *in = node->in; in; in = in->next)
-		{
-			count++;
-		}
-
-		node->out = ((umugu_node*)node->in->unit)->out;
-		for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
-		{
-			for (umugu_unit_list *in = node->in->next; in; in = in->next)
-			{
-				node->out[i].left += ((umugu_node*)in->unit)->out[i].left;
-				node->out[i].right += ((umugu_node*)in->unit)->out[i].right;
-			}
-			node->out[i].left /= count;
-			node->out[i].right /= count;
-		}
-		break;
-	}
-
-	default:
-	{
-		break;
-	}
-	}
-}*/
+static int32_t umugu__link_count;
 
 static umugu_wave *umugu__process(umugu_unit unit)
 {
@@ -196,81 +140,80 @@ static umugu_wave *umugu__process(umugu_unit unit)
 
 		case UMUGU_NT_MIX:
 		{
+			umugu_unit in[16]; // 16 just to be sure. TODO: efficient custom alloc.
 			int count = 0;
-			for (int i = unit - 1; i >= 0; --i)
+
+			for (int i = 0; umugu__scene.link[i].unit != umugu__last; ++i)
 			{
 				if (umugu__scene.link[i].unit == unit)
 				{
+					in[count] = umugu__scene.link[i].in;
 					count++;
 				}
 			}
 
-			node->out = ((umugu_node*)node->in->unit)->out;
+			out = umugu__scene.out[in[0]];
 			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
 			{
-				for (umugu_unit_list *in = node->in->next; in; in = in->next)
+				for (int j = 1; j < count; ++j)
 				{
-					node->out[i].left += ((umugu_node*)in->unit)->out[i].left;
-					node->out[i].right += ((umugu_node*)in->unit)->out[i].right;
+					out[i].left += umugu__scene.out[in[j]][i].left;
+					out[i].right += umugu__scene.out[in[j]][i].right;
 				}
-				node->out[i].left /= count;
-				node->out[i].right /= count;
 			}
+
+			// NOTE: Check assembly and profile two separate bucles vs one.
+			float inv_count = 1.0f / count;
+			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
+			{
+				out[i].left *= inv_count;
+				out[i].right *= inv_count;
+			}
+
 			break;
 		}
+
+		default:;
 	}
+
+	umugu__scene.out[unit] = out;
+	return out;
 }
 
 UMUGU_DEF umugu_wave *umugu_output()
 {
+	umugu_wave *out = NULL;
 	for (int i = 0; i <= umugu__last; ++i)
 	{
-		umugu__scene.link[i].in = 
+		out = umugu__process(umugu__scene.link[i].in);
 	}
-}
-
-UMUGU_DEF umugu_wave *umugu_getwave(umugu_unit unit)
-{
-	umugu__process((umugu_node*)unit);
 	umugu__alloc_free();
-	return ((umugu_node*)unit)->out;
+	return out;
 }
 
-UMUGU_DEF void umugu_setparent(umugu_unit unit, umugu_unit parent)
+UMUGU_DEF umugu_unit umugu_newunit(umugu_type type, void *data, umugu_unit parent)
 {
-	umugu_node *p = (umugu_node*)parent;
-	umugu_unit_list *node = (umugu_unit_list*)malloc(sizeof(umugu_unit_list));
-	node->unit = unit;
-	node->next = p->in;
-	p->in = node;
+	umugu__scene.type[++umugu__last] = type;
+	umugu__scene.data[umugu__last] = data;
+	umugu__scene.out[umugu__last] = NULL;
+	umugu__scene.link[umugu__link_count].unit = parent;
+	umugu__scene.link[umugu__link_count++].in = umugu__last;
+	return umugu__last;
 }
 
-UMUGU_DEF umugu_unit umugu_newunit(umugu_node_type type, void *data, umugu_unit parent)
-{
-	umugu_node *unit = (umugu_node*)malloc(sizeof(umugu_node));
-	unit->type = type;
-	unit->data = data;
-	unit->in = NULL;
-	if (parent)
-	{
-		umugu_setparent(unit, parent);
-	}
-	return (umugu_unit)unit;
-}
-
-UMUGU_DEF void umugu_iterate(umugu_unit unit, void(*callback)(umugu_unit))
-{
-	umugu_node *node = (umugu_node*)unit;
-	for (umugu_unit_list *in = node->in; in; in = in->next)
-	{
-		umugu_iterate((umugu_unit)in->unit, callback);
-	}
-	callback(unit);
-}
-
-UMUGU_DEF float *umugu_wave_table(umugu_wave_shape shape)
+UMUGU_DEF float *umugu_wave_table(umugu_shape shape)
 {
 	return umugu__wave_table[shape];
+}
+
+UMUGU_DEF int32_t umugu_scene_count()
+{
+	return umugu__last;
+}
+
+UMUGU_DEF const umugu_scene *umugu_scene_data()
+{
+	return &umugu__scene;
 }
 
 UMUGU_DEF void umugu_init()
@@ -314,6 +257,7 @@ UMUGU_DEF void umugu_init()
 		g_x2 += g_x1;
 	}
 
+	umugu__last = -1;
 	umugu__alloc_free();
 	umugu__init_backend();
 }
@@ -336,7 +280,6 @@ UMUGU_DEF void umugu_close()
 static PaStreamParameters umugu__pa_output_params;
 static PaStream *umugu__pa_stream;
 static PaError umugu__pa_err;
-static umugu_unit umugu__pa_output;
 
 static void umugu__pa_terminate()
 {
@@ -351,14 +294,13 @@ static int umugu__pa_callback(const void *in, void *out,
 		unsigned long fpb, const PaStreamCallbackTimeInfo *timeinfo,
 		PaStreamCallbackFlags flags, void *data)
 {
-	void *wave = umugu_getwave(umugu__pa_output);
+	void *wave = umugu_output();
 	memcpy(out, wave, sizeof(umugu_wave) * UMUGU_FRAMES_PER_BUFFER);
 	return 0;
 }
 
-UMUGU_DEF void umugu_start_stream(umugu_unit output_unit)
+UMUGU_DEF void umugu_start_stream()
 {
-	umugu__pa_output = output_unit;
 	umugu__pa_err = Pa_StartStream(umugu__pa_stream);
 	umugu__pa_check_err();
 }
@@ -402,7 +344,7 @@ static void umugu__close_backend()
 
 #else // Dummy IO backend.
 
-UMUGU_DEF void umugu_start_stream(umugu_unit output_unit) {}
+UMUGU_DEF void umugu_start_stream() {}
 UMUGU_DEF void umugu_stop_stream() {}
 static void umugu__init_backend() {}
 static void umugu__close_backend() {}

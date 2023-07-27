@@ -49,21 +49,21 @@ const char *const SHAPE_NAMES[] = {
 
 static void DrawUnitUI(umugu_unit unit)
 {
-	umugu_node *n = (umugu_node*)unit;
-	switch(n->type)
+	const umugu_scene *scene = umugu_scene_data();
+	switch(scene->type[unit])
 	{
 		case UMUGU_NT_OSCILOSCOPE:
 		{
-			umugu_osciloscope_data *d = (umugu_osciloscope_data*)n->data;
+			umugu_osciloscope_data *d = (umugu_osciloscope_data*)scene->data[unit];
 			ImGui::Text("Osciloscope");
 			if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[d->shape], 0))
 			{
 				for (int j = 0; j < UMUGU_WS_COUNT; ++j)
 				{
-					const bool selected = (d->shape == (umugu_wave_shape)j);
+					const bool selected = (d->shape == (umugu_shape)j);
 					if (ImGui::Selectable(SHAPE_NAMES[j], selected))
 					{
-						d->shape = (umugu_wave_shape)j;
+						d->shape = (umugu_shape)j;
 					}
 
 					if (selected)
@@ -87,7 +87,7 @@ static void DrawUnitUI(umugu_unit unit)
 	}
 }
 
-static void IterateGraphAndShowNodes(umugu_unit unit)
+/*static void IterateGraphAndShowNodes(umugu_unit unit)
 {
 	ImGui::PushID(unit);
 	DrawUnitUI(unit);
@@ -101,12 +101,17 @@ static void IterateGraphAndShowNodes(umugu_unit unit)
 		ImGui::TreePop();
 	}
 	ImGui::PopID();
-}
+}*/
 
 static void GraphWindow()
 {
 	ImGui::Begin("Graph");
-	IterateGraphAndShowNodes(graph_fx);
+	for (int i = 0; i < umugu_scene_count(); ++i)
+	{
+		ImGui::PushID(i);
+		DrawUnitUI(i);
+		ImGui::PopID();
+	}
 	ImGui::End();
 }
 
@@ -243,11 +248,11 @@ void Init()
 	osc_data[1].shape = UMUGU_WS_SINE;
 
 
-	graph_fx = umugu_newunit(UMUGU_NT_MIX, NULL, NULL);
+	graph_fx = umugu_newunit(UMUGU_NT_MIX, NULL, -1);
 	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[0], graph_fx);
 	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[1], graph_fx);
 
-	umugu_start_stream(graph_fx);
+	umugu_start_stream();
 	InitUI();
 }
 } // namespace umugu
