@@ -1,4 +1,6 @@
 #include "umugu_editor.h"
+#include <unordered_map>
+#include <vector>
 
 #define UMUGU_IO_PORTAUDIO
 #define UMUGU_IMPLEMENTATION
@@ -18,7 +20,7 @@
 
 #define PLOT_WAVE_SHAPE(WS, R, G, B) \
 	ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); \
-	ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_wave_table(WS), UMUGU_SAMPLE_RATE); \
+	ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_osciloscope_lut(WS), UMUGU_SAMPLE_RATE); \
 	ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
@@ -35,7 +37,6 @@ struct Window
 	void *gl_context;
 };
 
-umugu_unit graph_fx;
 Window window;
 float plot_x[UMUGU_SAMPLE_RATE];
 
@@ -47,14 +48,33 @@ const char *const SHAPE_NAMES[] = {
 	"WHITE_NOISE"
 };
 
+static umugu_scene scene;
+static umugu_osciloscope_data o1, o2;
+static std::vector<umugu_type> types = {UMUGU_NT_OSCILOSCOPE, UMUGU_NT_OSCILOSCOPE, UMUGU_NT_MIX};
+static std::vector<void*> data = {&o1, &o2, NULL};
+static std::vector<int> fx_rig = {2, 2, 0, 1};
+
+static void InitData()
+{
+	o1.freq = 440;
+	o1.shape = UMUGU_WS_SINE;
+	o1._phase = 0;
+	o2.freq = 240;
+	o2.shape = UMUGU_WS_SINE;
+	o2._phase = 0;
+
+	scene.data = data.data();
+	scene.type = types.data();
+	scene.fx_rig = fx_rig.data();
+}
+
 static void DrawUnitUI(umugu_unit unit)
 {
-	const umugu_scene *scene = umugu_scene_data();
-	switch(scene->type[unit])
+	switch(scene.type[unit])
 	{
 		case UMUGU_NT_OSCILOSCOPE:
 		{
-			umugu_osciloscope_data *d = (umugu_osciloscope_data*)scene->data[unit];
+			umugu_osciloscope_data *d = (umugu_osciloscope_data*)scene.data[unit];
 			ImGui::Text("Osciloscope");
 			if (ImGui::BeginCombo("Wave Shape", SHAPE_NAMES[d->shape], 0))
 			{
@@ -87,30 +107,15 @@ static void DrawUnitUI(umugu_unit unit)
 	}
 }
 
-/*static void IterateGraphAndShowNodes(umugu_unit unit)
-{
-	ImGui::PushID(unit);
-	DrawUnitUI(unit);
-	if (ImGui::TreeNode("Unit"))
-	{
-		umugu_node *n = (umugu_node*)unit;
-		for (umugu_unit_list *in = n->in; in; in = in->next)
-		{
-			IterateGraphAndShowNodes(in->unit);
-		}
-		ImGui::TreePop();
-	}
-	ImGui::PopID();
-}*/
-
 static void GraphWindow()
 {
 	ImGui::Begin("Graph");
-	for (int i = 0; i < umugu_scene_count(); ++i)
+	for (auto fx : fx_rig)
 	{
-		ImGui::PushID(i);
-		DrawUnitUI(i);
+		ImGui::PushID(fx);
+		DrawUnitUI(fx);
 		ImGui::PopID();
+		ImGui::Separator();
 	}
 	ImGui::End();
 }
@@ -237,20 +242,8 @@ void Init()
 	}
 	while (*x++ < fsample_rate);
 
-	umugu_init();
-	static umugu_osciloscope_data osc_data[2];
-	osc_data[0]._phase = 0;
-	osc_data[0].freq = 220;
-	osc_data[0].shape = UMUGU_WS_SINE;
-
-	osc_data[1]._phase = 0;
-	osc_data[1].freq = 440;
-	osc_data[1].shape = UMUGU_WS_SINE;
-
-
-	graph_fx = umugu_newunit(UMUGU_NT_MIX, NULL, -1);
-	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[0], graph_fx);
-	umugu_newunit(UMUGU_NT_OSCILOSCOPE, &osc_data[1], graph_fx);
+	InitData();
+	umugu_init(&scene);
 
 	umugu_start_stream();
 	InitUI();
