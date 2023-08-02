@@ -25,9 +25,12 @@ typedef int umugu_unit;
 
 typedef enum
 {
-	UMUGU_NT_OSCILOSCOPE = 0,
-	UMUGU_NT_MIX,
-	UMUGU_NT_COUNT
+	UMUGU_T_OSCILOSCOPE = 0,
+	UMUGU_T_MIX,
+	UMUGU_T_INSPECTOR,
+	UMUGU_T_VOLUME,
+	UMUGU_T_CLAMP,
+	UMUGU_T_COUNT
 } umugu_type;
 
 typedef enum
@@ -61,18 +64,61 @@ typedef struct
 	umugu_shape shape;
 } umugu_osciloscope_data;
 
+typedef struct
+{
+	float *values;
+	int size;
+	int it;
+	int stride;
+	int offset;
+	int pause;
+} umugu_inspector_data;
+
+typedef struct
+{
+	float multiplier;
+} umugu_volume_data;
+
+typedef struct
+{
+	float min;
+	float max;
+} umugu_clamp_data;
+
 const float *umugu_osciloscope_lut(umugu_shape shape);
 
 void umugu_init(umugu_scene *scene);
+void umugu_close();
+
 void umugu_start_stream();
 void umugu_stop_stream();
-void umugu_close();
+
+void umugu_serialize_scene(umugu_scene *scene, void *serialized, int count);
+umugu_scene *umugu_deserialize_scene(void *serialized_scene, int *count);
+
+void umugu_serialize_scene(umugu_scene *scene, void *serialized, int count)
+{
+	char *buffer = (char*)serialized;
+	*(int*)buffer = count;
+	buffer += sizeof(int);
+	umugu_type *type = (umugu_type*)buffer;
+	buffer += count * sizeof(umugu_type);
+	void **data = (void**)buffer;
+	buffer += count * sizeof(void**);
+
+	for (int i = 0; i < count; ++i)
+	{
+		type[i] = scene->type[i];
+		data[i] = scene->data[i];
+		memcpy(buffer, scene->data[i], sizeof()); // pillar size del data para cada type.
+	}
 
 #ifdef __cplusplus
 }
 #endif
 #endif // UMUGU_H
 
+//#define UMUGU_IMPLEMENTATION
 #ifdef UMUGU_IMPLEMENTATION
 
 #include <math.h>
@@ -140,7 +186,7 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 	umugu_wave *out = NULL;
 	switch (scene->type[unit])
 	{
-		case UMUGU_NT_OSCILOSCOPE:
+		case UMUGU_T_OSCILOSCOPE:
 		{
 			umugu_osciloscope_data *data = (umugu_osciloscope_data*)scene->data[unit];
 			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
@@ -158,7 +204,7 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 			break;
 		}
 
-		case UMUGU_NT_MIX:
+		case UMUGU_T_MIX:
 		{
 			int count = scene->fx_rig[umugu__fx_it++];
 			out = umugu__process_unit(scene);
@@ -177,6 +223,54 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 			{
 				out[i].left *= inv_count;
 				out[i].right *= inv_count;
+			}
+			break;
+		}
+
+		case UMUGU_T_INSPECTOR:
+		{
+			umugu_inspector_data *data = (umugu_inspector_data*)scene->data[unit];
+			out = umugu__process_unit(scene);
+			if (data->pause)
+			{
+				break;
+			}
+			float *fout = (float*)out;
+			for (int i = data->offset; i < UMUGU_FRAMES_PER_BUFFER * 2; i += data->stride)
+			{
+				data->values[data->it] = fout[i];
+				data->values[data->it + data->size] = fout[i];
+				data->it++;
+				if (data->it >= data->size)
+				{
+					data->it -= data->size;
+				}
+			}
+			break;
+		}
+
+		case UMUGU_T_VOLUME:
+		{
+			umugu_volume_data *data = (umugu_volume_data*)scene->data[unit];
+			out = umugu__process_unit(scene);
+			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
+			{
+				out[i].left *= data->multiplier;
+				out[i].right *= data->multiplier;
+			}
+			break;
+		}
+
+		case UMUGU_T_CLAMP:
+		{
+			umugu_clamp_data *data = (umugu_clamp_data*)scene->data[unit];
+			out = umugu__process_unit(scene);
+			for (int i = 0; i < UMUGU_FRAMES_PER_BUFFER; i++)
+			{
+				out[i].left = fmin(out[i].left, data->max);
+				out[i].left = fmax(out[i].left, data->min);
+				out[i].right = fmin(out[i].right, data->max);
+				out[i].right = fmax(out[i].right, data->min);
 			}
 			break;
 		}

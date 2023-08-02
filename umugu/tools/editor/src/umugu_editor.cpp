@@ -1,6 +1,8 @@
 #include "umugu_editor.h"
 #include <unordered_map>
 #include <vector>
+#include <list>
+#include <mutex>
 
 #define UMUGU_IO_PORTAUDIO
 #define UMUGU_IMPLEMENTATION
@@ -20,7 +22,7 @@
 
 #define PLOT_WAVE_SHAPE(WS, R, G, B) \
 	ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(R, G, B, 1.0f)); \
-	ImPlot::PlotLine(SHAPE_NAMES[WS], plot_x, umugu_osciloscope_lut(WS), UMUGU_SAMPLE_RATE); \
+	ImPlot::PlotLine(SHAPE_NAMES[WS], umugu_osciloscope_lut(WS), UMUGU_SAMPLE_RATE); \
 	ImPlot::PopStyleColor()
 
 static ImGuiIO *io;
@@ -38,7 +40,6 @@ struct Window
 };
 
 Window window;
-float plot_x[UMUGU_SAMPLE_RATE];
 
 const char *const SHAPE_NAMES[] = {
 	"SINE",
@@ -49,30 +50,42 @@ const char *const SHAPE_NAMES[] = {
 };
 
 static umugu_scene scene;
-static umugu_osciloscope_data o1, o2;
-static std::vector<umugu_type> types = {UMUGU_NT_OSCILOSCOPE, UMUGU_NT_OSCILOSCOPE, UMUGU_NT_MIX};
-static std::vector<void*> data = {&o1, &o2, NULL};
-static std::vector<int> fx_rig = {2, 2, 0, 1};
+static umugu_osciloscope_data o1;
+static umugu_volume_data vdat;
+static umugu_inspector_data inspec_dta;
+static umugu_clamp_data clampdat;
+static std::vector<umugu_type> types = {UMUGU_T_OSCILOSCOPE, UMUGU_T_VOLUME, UMUGU_T_CLAMP, UMUGU_T_INSPECTOR};
+static std::vector<void*> data = {&o1, &vdat, &clampdat, &inspec_dta};
+static std::vector<int> fx_rig = {3, 2, 1, 0};
+static float inspec_values[4096];
 
 static void InitData()
 {
-	o1.freq = 440;
+	o1.freq = 140;
 	o1.shape = UMUGU_WS_SINE;
 	o1._phase = 0;
-	o2.freq = 240;
-	o2.shape = UMUGU_WS_SINE;
-	o2._phase = 0;
+
+	vdat.multiplier = 1.0f;
+	clampdat.min = -1.0f;
+	clampdat.max = 1.0f;
 
 	scene.data = data.data();
 	scene.type = types.data();
 	scene.fx_rig = fx_rig.data();
+
+	inspec_dta.values = inspec_values;
+	inspec_dta.it = 0;
+	inspec_dta.offset = 0;
+	inspec_dta.stride = 2;
+	inspec_dta.size = 2048;
+	inspec_dta.pause = false;
 }
 
 static void DrawUnitUI(umugu_unit unit)
 {
 	switch(scene.type[unit])
 	{
-		case UMUGU_NT_OSCILOSCOPE:
+		case UMUGU_T_OSCILOSCOPE:
 		{
 			umugu_osciloscope_data *d = (umugu_osciloscope_data*)scene.data[unit];
 			ImGui::Text("Osciloscope");
@@ -97,9 +110,46 @@ static void DrawUnitUI(umugu_unit unit)
 			break;
 		}
 
-		case UMUGU_NT_MIX:
+		case UMUGU_T_MIX:
 		{
 			ImGui::Text("Mix");
+			break;
+		}
+
+		case UMUGU_T_INSPECTOR:
+		{
+			umugu_inspector_data *d = (umugu_inspector_data*)scene.data[unit];
+			if (ImPlot::BeginPlot("Inspector"))
+			{
+				ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+				ImPlot::PlotLine("Wave", d->values + d->it, d->size);
+				ImPlot::PopStyleColor();
+
+				ImPlot::EndPlot();
+			}
+			if (d->pause)
+			{
+				ImGui::InputInt("Stride", &d->stride, 0, 1024, 0);
+				ImGui::InputInt("Offset", &d->offset, 0, 1024, 0);
+			}
+			ImGui::Checkbox("Paused", (bool*)&d->pause);
+			break;
+		}
+
+		case UMUGU_T_VOLUME:
+		{
+			umugu_volume_data *d = (umugu_volume_data*)scene.data[unit];
+			ImGui::Text("Volume");
+			ImGui::InputFloat("Multiplier:", &d->multiplier, 0, 100, 0);
+			break;
+		}
+
+		case UMUGU_T_CLAMP:
+		{
+			umugu_clamp_data *d = (umugu_clamp_data*)scene.data[unit];
+			ImGui::Text("Clamp");
+			ImGui::InputFloat("Lower Limit:", &d->min, -2.0f, 2.0f, 0);
+			ImGui::InputFloat("Upper Limit:", &d->max, -2.0f, 2.0f, 0);
 			break;
 		}
 
@@ -232,16 +282,6 @@ void Close()
  
 void Init()
 {
-	float *x = plot_x;
-	float value = 0.0f;
-	float fsample_rate = (float)UMUGU_SAMPLE_RATE;
-
-	do
-	{
-		*x = value++;
-	}
-	while (*x++ < fsample_rate);
-
 	InitData();
 	umugu_init(&scene);
 
