@@ -1,21 +1,17 @@
-/*
-	TODO:
-	- Data serialization.
-*/
-
 #ifndef UMUGU_H
 #define UMUGU_H
+
+#include <string.h>
 
 #ifndef UMUGU_FRAMES_PER_BUFFER
 #define UMUGU_FRAMES_PER_BUFFER 60
 #endif
 
 #ifndef UMUGU_SAMPLE_RATE
-#define UMUGU_SAMPLE_RATE 44100
+#define UMUGU_SAMPLE_RATE 48000
 #endif
 
 //#define UMUGU_NO_OSCILOSCOPE_LUT
-//#define UMUGU_NO_STDIO
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +26,7 @@ typedef enum
 	UMUGU_T_INSPECTOR,
 	UMUGU_T_VOLUME,
 	UMUGU_T_CLAMP,
+	UMUGU_T_FILE,
 	UMUGU_T_COUNT
 } umugu_type;
 
@@ -51,9 +48,9 @@ typedef struct
 
 typedef struct
 {
+	int *fx_rig;
 	umugu_type *type;
 	void **data;
-	int *fx_rig;
 } umugu_scene;
 
 typedef struct
@@ -85,33 +82,24 @@ typedef struct
 	float max;
 } umugu_clamp_data;
 
+typedef struct
+{
+	umugu_wave *out;
+	char filename[256];
+	void *impl_data;
+} umugu_file_data;
+
 const float *umugu_osciloscope_lut(umugu_shape shape);
 
-void umugu_init(umugu_scene *scene);
+void umugu_init(umugu_scene *scene, void *alloc_arena);
 void umugu_close();
 
 void umugu_start_stream();
 void umugu_stop_stream();
 
-void umugu_serialize_scene(umugu_scene *scene, void *serialized, int count);
-umugu_scene *umugu_deserialize_scene(void *serialized_scene, int *count);
-
-void umugu_serialize_scene(umugu_scene *scene, void *serialized, int count)
-{
-	char *buffer = (char*)serialized;
-	*(int*)buffer = count;
-	buffer += sizeof(int);
-	umugu_type *type = (umugu_type*)buffer;
-	buffer += count * sizeof(umugu_type);
-	void **data = (void**)buffer;
-	buffer += count * sizeof(void**);
-
-	for (int i = 0; i < count; ++i)
-	{
-		type[i] = scene->type[i];
-		data[i] = scene->data[i];
-		memcpy(buffer, scene->data[i], sizeof()); // pillar size del data para cada type.
-	}
+size_t umugu_get_serialized_size(umugu_scene *scene);
+void umugu_serialize_scene(umugu_scene *in_scene, void *out_serialized);
+void umugu_deserialize_scene(umugu_scene *out_scene, void *in_serialized);
 
 #ifdef __cplusplus
 }
@@ -121,6 +109,7 @@ void umugu_serialize_scene(umugu_scene *scene, void *serialized, int count)
 //#define UMUGU_IMPLEMENTATION
 #ifdef UMUGU_IMPLEMENTATION
 
+#include <stdio.h>
 #include <math.h>
 
 #ifdef __cplusplus
@@ -133,6 +122,89 @@ static void umugu__init_backend(umugu_scene *scene);
 static void umugu__close_backend();
 
 static int umugu__fx_it;
+
+static const size_t UMUGU_DATA_SIZE[] = {
+	sizeof(umugu_osciloscope_data),
+	0,
+	sizeof(umugu_inspector_data),
+	sizeof(umugu_volume_data),
+	sizeof(umugu_clamp_data)
+};
+
+size_t umugu_get_serialized_size(umugu_scene *scene)
+{
+	int count = *scene->fx_rig + 1;
+	size_t size = sizeof(int);
+	size += count * sizeof(umugu_type);
+	size += count * sizeof(void**);
+	
+	for (int i = 0; i < count; ++i)
+	{
+		size += UMUGU_DATA_SIZE[scene->type[i]];
+	}
+
+	int *pipeline = scene->fx_rig;
+	while (*pipeline != 0)
+	{
+		size += sizeof(int);
+		++pipeline;
+	}
+
+	return size + sizeof(int);
+}
+
+void umugu_serialize_scene(umugu_scene *scene, void *serialized)
+{
+	int count = *scene->fx_rig + 1;
+	char *buffer = (char*)serialized;
+
+	int *pipeline = scene->fx_rig;
+	while(*pipeline != 0)
+	{
+		*(int*)buffer = *pipeline;
+		buffer += sizeof(int);
+		++pipeline;
+	}
+	*(int*)buffer = 0;
+	buffer += sizeof(int);
+
+	memcpy(buffer, scene->type, count * sizeof(umugu_type));
+	buffer += count * sizeof(umugu_type);
+
+	size_t *data_offsets = (size_t*)buffer;
+	buffer += count * sizeof(size_t*);
+
+	size_t offset = 0;
+	for (int i = 0; i < count; ++i)
+	{
+		data_offsets[i] = offset;
+		memcpy(buffer + offset, scene->data[i], UMUGU_DATA_SIZE[scene->type[i]]);
+		offset += UMUGU_DATA_SIZE[scene->type[i]];
+	}
+}
+
+void umugu_deserialize_scene(umugu_scene *scene, void *serialized)
+{
+	char *buffer = (char*)serialized;
+	int count = *(int*)buffer + 1;	
+
+	scene->fx_rig = (int*)buffer;
+	while (*(int*)buffer != 0)
+	{
+		buffer += sizeof(int);
+	}
+	buffer += sizeof(int);
+
+	scene->type = (umugu_type*)buffer;
+	buffer += count * sizeof(umugu_type);
+	scene->data = (void**)buffer;
+	buffer += count * sizeof(void**);
+
+	for (int i = 0; i < count; ++i)
+	{
+        scene->data[i] += (size_t)buffer;
+	}
+}
 
 #ifndef UMUGU_NO_OSCILOSCOPE_LUT
 static float umugu__osciloscope_lut[UMUGU_WS_COUNT][UMUGU_SAMPLE_RATE];
@@ -199,6 +271,22 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 				{
 					data->_phase -= UMUGU_SAMPLE_RATE;
 				}
+			}
+			out = data->out;
+			break;
+		}
+
+		case UMUGU_T_FILE:
+		{
+			static const float INV_SIG_RANGE = 1.0f / 32768.0f;
+			umugu_file_data *data = (umugu_file_data*)scene->data[unit];
+			fread(data->out, UMUGU_FRAMES_PER_BUFFER * 4, 1, (FILE*)data->impl_data); // size 4 -> 16 bytes stereo
+
+			short *it = (short*)data->out + UMUGU_FRAMES_PER_BUFFER * 2 - 1;
+			for (int i = UMUGU_FRAMES_PER_BUFFER - 1; i >= 0; --i)
+			{
+				data->out[i].right = *it-- * INV_SIG_RANGE;
+				data->out[i].left = *it-- * INV_SIG_RANGE;
 			}
 			out = data->out;
 			break;
@@ -280,6 +368,32 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 	return out;
 }
 
+static void umugu__init_units(const umugu_scene *scene, void *alloc_arena)
+{
+	int count = *scene->fx_rig + 1;
+	for (int i = 0; i < count; ++i)
+	{
+		switch (scene->type[i])
+		{
+			case UMUGU_T_FILE:
+			{
+				umugu_file_data *d = scene->data[i];
+				d->out = alloc_arena;
+				alloc_arena += UMUGU_FRAMES_PER_BUFFER * sizeof(umugu_wave);
+				d->impl_data = fopen(d->filename, "rb");
+				if (d->impl_data == NULL)
+				{
+					printf("%s\n", d->filename);
+				}
+				printf("init file\n");
+				break;
+			}
+
+			default: break;
+		};
+	}
+}
+
 const float *umugu_osciloscope_lut(umugu_shape shape)
 {
 #ifndef UMUGU_NO_OSCILOSCOPE_LUT
@@ -290,11 +404,12 @@ const float *umugu_osciloscope_lut(umugu_shape shape)
 }
 
 
-void umugu_init(umugu_scene *scene)
+void umugu_init(umugu_scene *scene, void *alloc_arena)
 {
 #ifndef UMUGU_NO_OSCILOSCOPE_LUT
 	umugu__gen_osciloscope_lut();
 #endif
+	umugu__init_units(scene, alloc_arena);
 	umugu__init_backend(scene);
 }
 
@@ -310,11 +425,11 @@ void umugu_close()
 
 #define umugu__pa_check_err() if (umugu__pa_err != paNoError) umugu__pa_terminate()
 
+//static PaStreamParameters umugu__pa_input_params;
 static PaStreamParameters umugu__pa_output_params;
 static PaStream *umugu__pa_stream;
 static PaError umugu__pa_err;
 
-#ifdef UMUGU_NO_STDIO
 static void umugu__pa_terminate()
 {
 	Pa_Terminate();
@@ -323,17 +438,6 @@ static void umugu__pa_terminate()
 	printf("Error message: %s.\n", Pa_GetErrorText(umugu__pa_err));
 	exit(umugu__pa_err);
 }
-#else
-#include <stdio.h>
-static void umugu__pa_terminate()
-{
-	Pa_Terminate();
-	printf("An error occurred while using the portaudio stream.\n");
-	printf("Error number: %d.\n", umugu__pa_err);
-	printf("Error message: %s.\n", Pa_GetErrorText(umugu__pa_err));
-	exit(umugu__pa_err);
-}
-#endif
 
 static int umugu__pa_callback(const void *in, void *out,
 		unsigned long fpb, const PaStreamCallbackTimeInfo *timeinfo,
@@ -396,7 +500,7 @@ static void umugu__close_backend()
 
 void umugu_start_stream() {}
 void umugu_stop_stream() {}
-static void umugu__init_backend() {}
+static void umugu__init_backend(umugu_scene *scene) {}
 static void umugu__close_backend() {}
 
 #endif // IO backends.

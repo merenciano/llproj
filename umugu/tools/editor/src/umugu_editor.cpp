@@ -3,6 +3,7 @@
 #include <vector>
 #include <list>
 #include <mutex>
+#include <fstream>
 
 #define UMUGU_IO_PORTAUDIO
 #define UMUGU_IMPLEMENTATION
@@ -54,16 +55,31 @@ static umugu_osciloscope_data o1;
 static umugu_volume_data vdat;
 static umugu_inspector_data inspec_dta;
 static umugu_clamp_data clampdat;
-static std::vector<umugu_type> types = {UMUGU_T_OSCILOSCOPE, UMUGU_T_VOLUME, UMUGU_T_CLAMP, UMUGU_T_INSPECTOR};
-static std::vector<void*> data = {&o1, &vdat, &clampdat, &inspec_dta};
+static umugu_file_data fdata;
+static std::vector<umugu_type> types = {UMUGU_T_FILE, UMUGU_T_VOLUME, UMUGU_T_CLAMP, UMUGU_T_INSPECTOR};
+//static std::vector<umugu_type> types = {UMUGU_T_OSCILOSCOPE, UMUGU_T_VOLUME, UMUGU_T_CLAMP};
+static std::vector<void*> data = {&fdata, &vdat, &clampdat, &inspec_dta};
 static std::vector<int> fx_rig = {3, 2, 1, 0};
 static float inspec_values[4096];
+uint8_t memarena[UMUGU_FRAMES_PER_BUFFER * sizeof(umugu_wave)];
+
+static void SaveScene(const char *filename)
+{
+	size_t size = umugu_get_serialized_size(&scene);
+	void *buffer = malloc(size);
+	umugu_serialize_scene(&scene, buffer);
+	std::ofstream file;
+	file.open(filename, std::ios_base::binary | std::ios_base::trunc);
+	file.write((const char*)buffer, size);
+}
 
 static void InitData()
 {
 	o1.freq = 140;
 	o1.shape = UMUGU_WS_SINE;
 	o1._phase = 0;
+
+	sprintf(fdata.filename, "input.wav");
 
 	vdat.multiplier = 1.0f;
 	clampdat.min = -1.0f;
@@ -79,6 +95,7 @@ static void InitData()
 	inspec_dta.stride = 2;
 	inspec_dta.size = 2048;
 	inspec_dta.pause = false;
+	//SaveScene("UmuguScene");
 }
 
 static void DrawUnitUI(umugu_unit unit)
@@ -107,6 +124,13 @@ static void DrawUnitUI(umugu_unit unit)
 				ImGui::EndCombo();
 			}
 			ImGui::InputInt("Frequency", &d->freq, 1, 10, 0);
+			break;
+		}
+
+		case UMUGU_T_FILE:
+		{
+			umugu_file_data *d = (umugu_file_data*)scene.data[unit];
+			ImGui::Text("File: %s", d->filename);
 			break;
 		}
 
@@ -283,7 +307,7 @@ void Close()
 void Init()
 {
 	InitData();
-	umugu_init(&scene);
+	umugu_init(&scene, memarena);
 
 	umugu_start_stream();
 	InitUI();
