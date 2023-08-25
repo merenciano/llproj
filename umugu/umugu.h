@@ -280,7 +280,7 @@ static umugu_wave *umugu__process_unit(const umugu_scene *scene)
 		{
 			static const float INV_SIG_RANGE = 1.0f / 32768.0f;
 			umugu_file_data *data = (umugu_file_data*)scene->data[unit];
-			fread(data->out, UMUGU_FRAMES_PER_BUFFER * 4, 1, (FILE*)data->impl_data); // size 4 -> 16 bytes stereo
+			fread(data->out, UMUGU_FRAMES_PER_BUFFER * 4, 1, (FILE*)data->impl_data); // size 4 -> 2 bytes stereo
 
 			short *it = (short*)data->out + UMUGU_FRAMES_PER_BUFFER * 2 - 1;
 			for (int i = UMUGU_FRAMES_PER_BUFFER - 1; i >= 0; --i)
